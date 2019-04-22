@@ -56,11 +56,13 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
 
 
 
+    //first startup of app
     @Override
     protected void onCreate(Bundle savedInstanceState) {
 
         super.onCreate(savedInstanceState);
 
+        //subscriber seperated from executable
         sub = new Subscriber();
 
 
@@ -77,6 +79,7 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
 
         TextBoxBusline = findViewById(R.id.busLineID);
 
+        //popup to enter broker IP
         {
             AlertDialog.Builder builder = new AlertDialog.Builder(this);
             builder.setTitle("Enter Broker IP");
@@ -116,7 +119,7 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
-        // Add a marker in Sydney and move the camera
+
 
     }
 
@@ -128,21 +131,24 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
 
 
 
-
+    //button click event handler
     @Override
     public void onClick(View view)
     {
 
 
-
+        //add the ID1 to this sub
+        //TODO make this work for more subs
 
             sub.subscriberID = "1";
             sub.brokerOut = out;
             sub.topic = TextBoxBusline.getText().toString();
 
 
+            //create the client (subscriber) thread
             c = new Client(sub);
 
+            //run the thread
             c.execute();
 
 
@@ -151,6 +157,8 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
 
 
 
+
+    //client socket thread
     class Client extends AsyncTask<Void,Void,Void> implements Serializable
     {
 
@@ -182,6 +190,8 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                                      mMap.addMarker(new MarkerOptions().position(bus).title(b.LineCode + " " + b.vehicleId));
                                  }
 
+
+                                 //zoom
                                  if(first) {
 
                                      mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(bus, 15));
@@ -201,6 +211,7 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         }
 
 
+        //register as before
         private void register(String ip, int port, String topic) {
             try
             {
