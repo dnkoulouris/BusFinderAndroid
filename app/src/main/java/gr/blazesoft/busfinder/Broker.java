@@ -102,7 +102,7 @@ public class Broker extends Node
 
     public static void main(String[] args)
     {
-        new Broker(Utils.getSystemIP(), 8080, args[0]);
+        new Broker(Utils.getSystemIP(), 49000, args[0]);
     }
 
     //Parallel Server
