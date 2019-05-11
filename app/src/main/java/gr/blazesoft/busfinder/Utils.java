@@ -1,9 +1,18 @@
 package gr.blazesoft.busfinder;
 
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.math.BigInteger;
-import java.net.*;
+import java.net.ConnectException;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -120,7 +129,8 @@ public class Utils
 
         } catch (ConnectException unknownHost) {
 
-        } catch (IOException ioException) {
+        } catch (Exception ioException)
+        {
             ioException.printStackTrace();
         } finally {
             try {

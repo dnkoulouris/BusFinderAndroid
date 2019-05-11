@@ -1,7 +1,10 @@
 package gr.blazesoft.busfinder;
 
-import java.io.*;
-import java.net.*;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Scanner;
 
@@ -177,17 +180,26 @@ public class Broker extends Node
 
                     if (top != null)
                     {
-                        if(registeredSubs.isEmpty() || !containsSubId(s.subscriberID))
+                        s.brokerOut = out;
+                        boolean found = false;
+                        for (Subscriber sl : registeredSubs)
                         {
-                            s.brokerOut = out;
+                            if (sl.subscriberID.equals(s.subscriberID))
+                            {
+                                sl.topic = s.topic;
+                                System.out.println("Updated subscriber " + sl.subscriberID + " with topic " + sl.topic);
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found)
+                        {
                             registeredSubs.add(s);
                             System.out.println("Subscriber " + s.subscriberID + " registered");
                         }
                         out.reset();
                         out.writeUTF("bus_is_here");
                         out.flush();
-
-
 
                         out.reset();
                         out.writeUnshared(this);
@@ -277,19 +289,9 @@ public class Broker extends Node
                 }
                 else if(sendtext.equals("remove_me"))
                 {
+                    System.out.println("About to remove");
                     Subscriber s = (Subscriber) in.readObject();
-                    for (int i=0; i<registeredSubs.size(); i++) {
-                        if (s.subscriberID.equals(registeredSubs.get(i).subscriberID)) {
-                            registeredSubs.get(i).brokerOut.writeUnshared("proceed");
-                            try {
-
-                                registeredSubs.get(i).brokerOut.close();
-                            } catch (IOException ioException){
-                                ioException.printStackTrace();
-                            }
-                            registeredSubs.remove(i);
-                        }
-                    }
+                    removeFromRegistered(s);
                 }
             }
 
@@ -311,7 +313,6 @@ public class Broker extends Node
         for (int i=0; i<registeredSubs.size(); i++) {
             if (registeredSubs.get(i).subscriberID.equals(s.subscriberID)) {
                 try {
-
                     registeredSubs.get(i).brokerOut.close();
                 } catch (IOException ioException){
                     System.out.println("Subscriber " + registeredSubs.get(i).subscriberID + " connection closed");
@@ -320,7 +321,6 @@ public class Broker extends Node
                 System.out.println("Subscriber " + s.subscriberID + " unregistered");
             }
         }
-
     }
 
     public void push(BusLine top)
@@ -329,22 +329,17 @@ public class Broker extends Node
         {
             if (top.lineID.equals(s.topic)) {
                 try {
-
-
                     s.brokerOut.reset();
                     s.brokerOut.writeUnshared(top.runningBuses);
                     s.brokerOut.flush();
                     System.out.println("Sent " + top.lineID + " to Subcriber " + s.subscriberID);
                 } catch (IOException e) {
-                    //e.printStackTrace();
-
                     removeFromRegistered(s);
                     return;
                 }
             }
         }
     }
-
 
     public boolean contains_broker(Broker bin)
     {

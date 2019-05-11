@@ -1,7 +1,6 @@
 package gr.blazesoft.busfinder;
 
-
-import java.io.*;
+import java.io.Serializable;
 import java.util.ArrayList;
 
 public class Node extends Thread implements Serializable

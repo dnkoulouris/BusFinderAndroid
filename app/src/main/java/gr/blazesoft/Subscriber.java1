@@ -49,8 +49,6 @@ public class Subscriber extends Node
             out.writeUTF("i_want_bus");
             out.flush();
 
-
-
             out.reset();
             out.writeUnshared(this);
             out.flush();

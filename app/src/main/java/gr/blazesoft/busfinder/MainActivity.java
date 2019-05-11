@@ -1,27 +1,20 @@
 package gr.blazesoft.busfinder;
 
-import android.app.AlertDialog;
-import android.content.DialogInterface;
+import android.content.Intent;
 import android.os.AsyncTask;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.support.v4.app.FragmentActivity;
-import android.os.Bundle;
-import android.text.InputType;
 import android.view.View;
-import android.widget.Button;
-import android.widget.EditText;
-
 
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
-import com.google.android.gms.maps.model.BitmapDescriptor;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
-
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
@@ -33,94 +26,38 @@ import java.util.ArrayList;
 
 public class MainActivity extends FragmentActivity implements OnMapReadyCallback, View.OnClickListener, Serializable
 {
-    private volatile GoogleMap mMap;
-    private Button mButton;
-    private EditText TextBoxBusline;
+    private GoogleMap mMap;
 
+    private Socket requestSocket = null;
+    private ObjectOutputStream out = null;
+    private ObjectInputStream in = null;
+
+    private Subscriber sub;
     private String brokerIP;
+    private Client c;
 
-    public volatile Broker currentBroker;
-    public static volatile boolean stopDownload = false;
-
-    private static Socket requestSocket = null;
-    private static ObjectOutputStream out = null;
-    private static ObjectInputStream in = null;
-
-    private static Subscriber sub;
-    private static Client c = null;
-
-    //first startup of app
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
         super.onCreate(savedInstanceState);
-
-        //subscriber seperated from executable
-        sub = new Subscriber();
-
         setContentView(R.layout.activity_maps);
 
-        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
-                .findFragmentById(R.id.map);
+        sub = new Subscriber();
+        sub.topic = BusSelector.topic;
+        sub.subscriberID = BusSelector.id;
+        brokerIP = BusSelector.brokerIP;
+
+        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
+        findViewById(R.id.button).setOnClickListener(this);
+    }
 
-        mButton = findViewById(R.id.button);
-        mButton.setOnClickListener(this);
-
-        TextBoxBusline = findViewById(R.id.busLineID);
-
-        //popup to enter broker IP
-        {
-            AlertDialog.Builder builder = new AlertDialog.Builder(this);
-            builder.setTitle("Enter Broker IP");
-
-            final EditText input = new EditText(this);
-            input.setInputType(InputType.TYPE_CLASS_TEXT);
-            builder.setView(input);
-            builder.setPositiveButton("OK", new DialogInterface.OnClickListener()
-            {
-                @Override
-                public void onClick(DialogInterface dialog, int which)
-                {
-                    brokerIP = input.getText().toString();
-                }
-            });
-            builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener()
-            {
-                @Override
-                public void onClick(DialogInterface dialog, int which)
-                {
-                    dialog.cancel();
-                }
-            });
-            builder.show();
-        }
-        //popup to enter sub ID
-        {
-            AlertDialog.Builder builder2 = new AlertDialog.Builder(this);
-            builder2.setTitle("Enter Subscriber ID");
-
-            final EditText subID = new EditText(this);
-            subID.setInputType(InputType.TYPE_CLASS_TEXT);
-            builder2.setView(subID);
-            builder2.setPositiveButton("OK", new DialogInterface.OnClickListener()
-            {
-                @Override
-                public void onClick(DialogInterface dialog, int which)
-                {
-                    sub.subscriberID = subID.getText().toString();
-                }
-            });
-            builder2.setNegativeButton("Cancel", new DialogInterface.OnClickListener()
-            {
-                @Override
-                public void onClick(DialogInterface dialog, int which)
-                {
-                    dialog.cancel();
-                }
-            });
-            builder2.show();
-        }
+    @Override
+    protected void onResume()
+    {
+        super.onResume();
+        c = new Client(sub);
+        c.execute();
     }
 
     /**
@@ -138,31 +75,21 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         mMap = googleMap;
     }
 
-    public void disconnect(String ip, int port)
-    {
-        Utils.sendPacket(this, ip, port, "remove_me");
-    }
-
-    //button click event handler
     @Override
     public void onClick(View view)
     {
-        //add the ID1 to this sub
-        sub.brokerOut = out;
-        sub.topic = TextBoxBusline.getText().toString();
+        c.cancel(true);
+        new Remover(sub).execute();
 
-        //create the client (subscriber) thread
-        c = new Client(sub);
-
-        //run the thread
-        c.execute();
+        Intent intent = new Intent(this, BusSelector.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        startActivityIfNeeded(intent, 0);
     }
-
 
     //client socket thread
     class Client extends AsyncTask<Void, Void, Void> implements Serializable
     {
-        Subscriber s;
+        private Subscriber s;
 
         public Client(Subscriber s)
         {
@@ -172,8 +99,69 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
         @Override
         protected Void doInBackground(Void... voids)
         {
-            register(brokerIP, 49000, TextBoxBusline.getText().toString());
+            register(brokerIP, 49000, s.topic);
             return null;
+        }
+
+        private void register(String ip, int port, String topic)
+        {
+            try
+            {
+                requestSocket = new Socket(ip, port);
+                out = new ObjectOutputStream(requestSocket.getOutputStream());
+                in = new ObjectInputStream(requestSocket.getInputStream());
+
+                out.reset();
+                out.writeUTF("i_want_bus");
+                out.flush();
+
+                out.reset();
+                out.writeUnshared(sub);
+                out.flush();
+
+                String returned = in.readUTF();
+                if (returned.equals("bus_is_here"))
+                {
+                    sub.currentBroker = (Broker) in.readObject();
+                    ArrayList<Bus> ret = (ArrayList<Bus>) in.readObject();
+                    visualizeData(ret, true);
+
+                    while (!isCancelled())
+                    {
+                        ret = (ArrayList<Bus>) in.readObject();
+                        visualizeData(ret, false);
+                    }
+                } else if (returned.equals("bus_not_here"))
+                {
+                    ArrayList<Broker> brokers = (ArrayList<Broker>) in.readObject();
+
+                    for (Broker b : brokers)
+                    {
+                        if (b.containsTopic(topic) != null)
+                        {
+                            System.out.println(b.IP + " has your data.");
+                            register(b.IP, b.port, topic);
+                        }
+                    }
+                }
+            } catch (UnknownHostException unknownHost)
+            {
+                System.err.println("You are trying to connect to an unknown host!");
+            } catch (Exception ioException)
+            {
+                ioException.printStackTrace();
+            } finally
+            {
+                try
+                {
+                    in.close();
+                    out.close();
+                    requestSocket.close();
+                } catch (IOException ioException)
+                {
+                    ioException.printStackTrace();
+                }
+            }
         }
 
         public void visualizeData(final ArrayList<Bus> ret, final boolean first)
@@ -194,7 +182,6 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                     //zoom
                     if (first)
                     {
-
                         mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(bus, 15));
                         // Zoom in, animating the camera.
                         mMap.animateCamera(CameraUpdateFactory.zoomIn());
@@ -206,73 +193,22 @@ public class MainActivity extends FragmentActivity implements OnMapReadyCallback
                 // your UI code here
             });
         }
+    }
 
-        //register as before
-        private void register(String ip, int port, String topic)
+    class Remover extends AsyncTask<Void, Void, Void>
+    {
+        Subscriber s;
+
+        public Remover(Subscriber s)
         {
-            try
-            {
-                requestSocket = new Socket(ip, port);
-                out = new ObjectOutputStream(requestSocket.getOutputStream());
-                in = new ObjectInputStream(requestSocket.getInputStream());
-
-                out.writeUTF("i_want_bus");
-                out.flush();
-                out.reset();
-                out.writeUnshared(this.s);
-                out.flush();
-
-                String returned = in.readUTF();
-                if (returned.equals("bus_is_here"))
-                {
-                    currentBroker = (Broker) in.readObject();
-                    ArrayList<Bus> ret = (ArrayList<Bus>) in.readObject();
-                    visualizeData(ret, true);
-
-                    while (!stopDownload)
-                    {
-                        ret = (ArrayList<Bus>) in.readObject();
-                        visualizeData(ret, false);
-                        if (isCancelled())
-                            break;
-                    }
-
-                } else if (returned.equals("bus_not_here"))
-                {
-                    System.out.println("Line not found in broker 1");
-                    ArrayList<Broker> brokers = (ArrayList<Broker>) in.readObject();
-
-                    for (Broker b : brokers)
-                    {
-                        if (b.containsTopic(topic) != null)
-                        {
-                            System.out.println(b.IP + " has your data.");
-                            register(b.IP, b.port, topic);
-                        }
-                    }
-                }
-            } catch (UnknownHostException unknownHost)
-            {
-                System.err.println("You are trying to connect to an unknown host!");
-            } catch (IOException ioException)
-            {
-                ioException.printStackTrace();
-            } catch (ClassNotFoundException e)
-            {
-                e.printStackTrace();
-            } finally
-            {
-                try
-                {
-                    in.close();
-                    out.close();
-                    requestSocket.close();
-                } catch (IOException ioException)
-                {
-                    ioException.printStackTrace();
-                }
-            }
+            this.s = s;
         }
 
+        @Override
+        protected Void doInBackground(Void... voids)
+        {
+            Utils.sendPacket(s, s.currentBroker.IP, 49000, "remove_me");
+            return null;
+        }
     }
 }
